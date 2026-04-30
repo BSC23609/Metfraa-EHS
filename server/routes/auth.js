@@ -1,18 +1,13 @@
 // ============================================================================
-// Google Sign-In OAuth routes
-// Flow:
-//   /auth/google  -> redirects user to Google's consent screen
-//   /auth/google/callback  -> Google redirects back here with a code
-//                             we exchange the code for tokens, fetch profile,
-//                             store identity in the session cookie
-//   /auth/logout  -> clears the session
+// Sign-In OAuth routes (Google & Microsoft)
 // ============================================================================
 const express = require('express');
 const { OAuth2Client } = require('google-auth-library');
 
 const router = express.Router();
 
-function getRedirectUri() {
+// --- GOOGLE CONFIG ---
+function getGoogleRedirectUri() {
   const base = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
   return `${base}/auth/google/callback`;
 }
@@ -21,11 +16,19 @@ function getOAuthClient() {
   return new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    getRedirectUri(),
+    getGoogleRedirectUri(),
   );
 }
 
-// Step 1 — kick off the Google OAuth flow
+// --- MICROSOFT CONFIG ---
+function getMsRedirectUri() {
+  const base = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  return `${base}/auth/microsoft/callback`;
+}
+
+// ============================================================================
+// GOOGLE ROUTES
+// ============================================================================
 router.get('/google', (req, res) => {
   const client = getOAuthClient();
   const url = client.generateAuthUrl({
@@ -36,7 +39,6 @@ router.get('/google', (req, res) => {
   res.redirect(url);
 });
 
-// Step 2 — Google calls us back with ?code=...
 router.get('/google/callback', async (req, res, next) => {
   try {
     const { code } = req.query;
@@ -68,6 +70,78 @@ router.get('/google/callback', async (req, res, next) => {
   }
 });
 
+// ============================================================================
+// MICROSOFT ROUTES
+// ============================================================================
+router.get('/microsoft', (req, res) => {
+  const tenant = process.env.AZURE_TENANT_ID;
+  const clientId = process.env.AZURE_CLIENT_ID;
+  const redirectUri = getMsRedirectUri();
+
+  const url = new URL(`[https://login.microsoftonline.com/$](https://login.microsoftonline.com/$){tenant}/oauth2/v2.0/authorize`);
+  url.searchParams.append('client_id', clientId);
+  url.searchParams.append('response_type', 'code');
+  url.searchParams.append('redirect_uri', redirectUri);
+  url.searchParams.append('response_mode', 'query');
+  url.searchParams.append('scope', 'openid profile email');
+  url.searchParams.append('prompt', 'select_account');
+
+  res.redirect(url.toString());
+});
+
+router.get('/microsoft/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.redirect('/login?error=no_code');
+
+    const tenant = process.env.AZURE_TENANT_ID;
+    const tokenUrl = `[https://login.microsoftonline.com/$](https://login.microsoftonline.com/$){tenant}/oauth2/v2.0/token`;
+
+    const body = new URLSearchParams({
+      client_id: process.env.AZURE_CLIENT_ID,
+      client_secret: process.env.AZURE_CLIENT_SECRET,
+      code,
+      redirect_uri: getMsRedirectUri(),
+      grant_type: 'authorization_code'
+    });
+
+    // Exchange code for token
+    const tokenRes = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok) throw new Error(tokenData.error_description || 'Token fetch failed');
+
+    // Decode the Microsoft JWT ID token
+    const idToken = tokenData.id_token;
+    const payloadBase64Url = idToken.split('.')[1];
+    const payloadBase64 = payloadBase64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+    const payload = JSON.parse(payloadJson);
+
+    // Save identity to session
+    req.session.user = {
+      sub: payload.oid || payload.sub,
+      email: payload.preferred_username || payload.email,
+      name: payload.name,
+      picture: null, // Microsoft doesn't provide a picture URL in the default token
+      verified: true,
+      loginAt: Date.now(),
+    };
+
+    res.redirect('/');
+  } catch (err) {
+    console.error('[Microsoft callback]', err);
+    res.redirect('/login?error=oauth_failed');
+  }
+});
+
+// ============================================================================
+// LOGOUT
+// ============================================================================
 router.post('/logout', (req, res) => {
   req.session = null;
   res.json({ ok: true });
