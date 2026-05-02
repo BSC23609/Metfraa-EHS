@@ -49,9 +49,16 @@
 <body>
   <div class="login-shell">
     <div class="login-side">
-      <!-- Logo with fallback: if PNG fails to load, show inline SVG text -->
-      <img src="/img/logo.png" alt="Metfraa" class="login-logo"
-           onerror="this.outerHTML='<div style=&quot;font-family:Bebas Neue,sans-serif;font-size:36px;letter-spacing:3px;color:white;line-height:1;&quot;>METFRAA<div style=&quot;font-size:11px;letter-spacing:2px;margin-top:4px;color:#1B7BC4;&quot;>STEEL BUILDINGS PVT. LTD.</div></div>'">
+      <!-- Logo on a white card so it's always visible regardless of PNG colors. -->
+      <!-- If image fails to load, the fallback text takes its place automatically. -->
+      <div class="login-logo-card">
+        <img src="/img/logo.png?v=2" alt="Metfraa Steel Buildings" class="login-logo"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        <div class="login-logo-fallback" style="display:none;">
+          <div class="ll-main">METFRAA</div>
+          <div class="ll-sub">STEEL BUILDINGS PVT. LTD.</div>
+        </div>
+      </div>
 
       <div>
         <h1 class="login-headline">EHS<br>FORMS<br><span>PORTAL</span></h1>

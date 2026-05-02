@@ -150,12 +150,23 @@ router.get('/google/callback', async (req, res) => {
 // ============================================================================
 // MICROSOFT
 // ============================================================================
+// Tenant strategy:
+//   - AZURE_TENANT_ID is your specific tenant; used by lib/onedrive.js for the
+//     APP-only auth that uploads files to your company OneDrive.
+//   - For the SIGN-IN flow, we use "common" by default so users with personal
+//     OR work Microsoft accounts (any tenant) can log in.
+//   - You can override this by setting MS_AUTH_TENANT to a specific tenant ID
+//     if you ever want to restrict sign-in to your company only.
+
+function getMsAuthTenant() {
+  const override = cleanEnv(process.env.MS_AUTH_TENANT);
+  return override || 'common';
+}
 
 router.get('/microsoft', (req, res) => {
   try {
-    const tenant = cleanEnv(process.env.AZURE_TENANT_ID);
+    const tenant = getMsAuthTenant();
     const clientId = cleanEnv(process.env.AZURE_CLIENT_ID);
-    if (!tenant) throw new Error('AZURE_TENANT_ID is not set');
     if (!clientId) throw new Error('AZURE_CLIENT_ID is not set');
 
     // Validate APP_BASE_URL up front so we get a clear message if it's bad
@@ -186,7 +197,7 @@ router.get('/microsoft/callback', async (req, res) => {
     }
     if (!code) return res.redirect('/login?error=no_code');
 
-    const tenant = cleanEnv(process.env.AZURE_TENANT_ID);
+    const tenant = getMsAuthTenant();
     const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
 
     const body = new URLSearchParams({
