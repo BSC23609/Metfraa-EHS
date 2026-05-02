@@ -114,4 +114,154 @@ router.get('/logo', (req, res) => {
   res.type('image/png').sendFile(logoPath);
 });
 
+// OneDrive connectivity test — runs the actual Graph API calls and reports
+// exactly what works and what fails. Use this to diagnose "User not found"
+// or other upload errors.
+router.get('/onedrive', async (req, res) => {
+  const result = {
+    timestamp: new Date().toISOString(),
+    checks: {},
+  };
+
+  const tenantId = cleanEnv(process.env.AZURE_TENANT_ID);
+  const clientId = cleanEnv(process.env.AZURE_CLIENT_ID);
+  const clientSecret = cleanEnv(process.env.AZURE_CLIENT_SECRET);
+  const onedriveUserId = cleanEnv(process.env.ONEDRIVE_USER_ID);
+
+  result.checks.env_vars = {
+    tenantId_set: !!tenantId,
+    clientId_set: !!clientId,
+    clientSecret_set: !!clientSecret,
+    onedriveUserId: onedriveUserId || '(unset)',
+    pass: !!(tenantId && clientId && clientSecret && onedriveUserId),
+  };
+
+  if (!result.checks.env_vars.pass) {
+    result.summary = '❌ One or more required env vars are missing';
+    return res.json(result);
+  }
+
+  // Step 1: Get a Graph access token
+  let accessToken = null;
+  try {
+    const { ConfidentialClientApplication } = require('@azure/msal-node');
+    const msal = new ConfidentialClientApplication({
+      auth: {
+        clientId,
+        authority: `https://login.microsoftonline.com/${tenantId}`,
+        clientSecret,
+      },
+    });
+    const tokenResult = await msal.acquireTokenByClientCredential({
+      scopes: ['https://graph.microsoft.com/.default'],
+    });
+    accessToken = tokenResult.accessToken;
+    result.checks.token_acquisition = {
+      pass: true,
+      token_length: accessToken.length,
+      expires_on: tokenResult.expiresOn,
+    };
+  } catch (err) {
+    result.checks.token_acquisition = { pass: false, error: err.message };
+    result.summary = '❌ Failed to acquire app token from Microsoft. Check AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET.';
+    return res.json(result);
+  }
+
+  // Step 2: Try to look up the user by UPN/email
+  try {
+    const userResp = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(onedriveUserId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (userResp.ok) {
+      const userJson = await userResp.json();
+      result.checks.user_lookup = {
+        pass: true,
+        id: userJson.id,
+        displayName: userJson.displayName,
+        userPrincipalName: userJson.userPrincipalName,
+        mail: userJson.mail,
+        accountEnabled: userJson.accountEnabled,
+      };
+    } else {
+      const errBody = await userResp.text();
+      result.checks.user_lookup = {
+        pass: false,
+        status: userResp.status,
+        error: errBody.slice(0, 500),
+        diagnosis: userResp.status === 404
+          ? `The user "${onedriveUserId}" does NOT exist in your Azure AD tenant. This means: either (a) the email is just an alias/forwarder at your domain registrar but not a real M365 user, OR (b) the tenant ID is wrong. Buy at least one M365 Business Basic license and create this user, or change ONEDRIVE_USER_ID to a different account that exists.`
+          : 'Unknown error during user lookup',
+      };
+      result.summary = `❌ "User not found" — ${onedriveUserId} is not a valid M365 user in your tenant.`;
+      return res.json(result);
+    }
+  } catch (err) {
+    result.checks.user_lookup = { pass: false, error: err.message };
+    result.summary = '❌ User lookup failed';
+    return res.json(result);
+  }
+
+  // Step 3: Try to access the user's OneDrive
+  try {
+    const driveResp = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(onedriveUserId)}/drive`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (driveResp.ok) {
+      const driveJson = await driveResp.json();
+      result.checks.drive_access = {
+        pass: true,
+        driveId: driveJson.id,
+        driveType: driveJson.driveType,
+        owner: driveJson.owner?.user?.displayName || driveJson.owner?.user?.email,
+        webUrl: driveJson.webUrl,
+        quota_used_bytes: driveJson.quota?.used,
+        quota_total_bytes: driveJson.quota?.total,
+      };
+    } else {
+      const errBody = await driveResp.text();
+      result.checks.drive_access = {
+        pass: false,
+        status: driveResp.status,
+        error: errBody.slice(0, 500),
+        diagnosis: 'User exists but has no OneDrive provisioned. They may need an M365 license that includes OneDrive (Business Basic, Business Standard, etc.). Note: a one-time visit to OneDrive.com by that user often triggers provisioning.',
+      };
+      result.summary = '❌ OneDrive not accessible for this user';
+      return res.json(result);
+    }
+  } catch (err) {
+    result.checks.drive_access = { pass: false, error: err.message };
+    result.summary = '❌ Drive access failed';
+    return res.json(result);
+  }
+
+  // Step 4: Try to read the root folder (proves Files.ReadWrite.All works)
+  try {
+    const rootResp = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(onedriveUserId)}/drive/root/children?$top=5`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (rootResp.ok) {
+      const rootJson = await rootResp.json();
+      result.checks.permissions = {
+        pass: true,
+        sample_root_items: (rootJson.value || []).slice(0, 5).map(i => i.name),
+      };
+    } else {
+      const errBody = await rootResp.text();
+      result.checks.permissions = {
+        pass: false,
+        status: rootResp.status,
+        error: errBody.slice(0, 500),
+        diagnosis: 'App permissions issue. Make sure Files.ReadWrite.All is granted at Azure portal → App registrations → API permissions → admin consent.',
+      };
+      result.summary = '❌ App permissions not granted';
+      return res.json(result);
+    }
+  } catch (err) {
+    result.checks.permissions = { pass: false, error: err.message };
+  }
+
+  result.summary = '✅ OneDrive is fully reachable. Form submissions should succeed.';
+  res.json(result);
+});
+
 module.exports = router;

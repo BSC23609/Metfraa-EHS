@@ -144,6 +144,34 @@ const HSE_MEETING = {
   ],
 };
 
+const PERMIT_RECORD = {
+  id: 'permit-record',
+  code: 'PR',
+  title: 'Permit Record',
+  category: 'general',
+  folder: '07-Permit-Records',
+  icon: '📋',
+  fields: [
+    { key: 'project_name',         label: 'Project Name',                   type: 'text',     required: true },
+    { key: 'date',                 label: 'Date',                           type: 'date',     required: true, autofill: 'today' },
+    { key: 'time',                 label: 'Time',                           type: 'time',     required: true, autofill: 'now' },
+    { key: 'work_location',        label: 'Exact Location of Work',         type: 'text',     required: true },
+    { key: 'work_description',     label: 'Work Description',               type: 'textarea', required: true },
+    { key: 'permit_no',            label: 'Permit No.',                     type: 'text',     required: true },
+    { key: 'permit_type',          label: 'Type of Permit',                 type: 'radio',    required: true,
+      options: [
+        'Height Work Permit',
+        'Hot Work Permit',
+        'Night Work Permit',
+        'Shuttering & Deshuttering Permit',
+        'General Work Permit',
+        'Loading & Unloading Work Permit',
+      ] },
+    { key: 'hse_officer',          label: 'HSE Officer',                    type: 'inspector',required: true },
+    { key: 'approved_by',          label: 'Approved By',                    type: 'radio',    required: true, options: APPROVERS },
+  ],
+};
+
 // ----------------------------------------------------------------------------
 // CATEGORY B — Equipment Inspection Forms (15 forms, shared header structure)
 // ----------------------------------------------------------------------------
@@ -529,6 +557,7 @@ const ALL_FORMS = [
   EHS_AUDIT,
   INCIDENT,
   HSE_MEETING,
+  PERMIT_RECORD,
   ...EQUIPMENT_FORMS,
 ];
 

@@ -337,7 +337,20 @@ async function submitForm() {
   } catch (err) {
     setLoader(false);
     console.error(err);
-    toast(err.message || 'Submission failed', 'error', 8000);
+    const msg = err.message || 'Submission failed';
+    // Friendly hint for OneDrive errors
+    if (/user not found|invalid_user|insufficient.*priv/i.test(msg)) {
+      toast(
+        `<strong>OneDrive storage error.</strong><br>` +
+        `${escapeHtml(msg)}<br><br>` +
+        `Your form was prepared but couldn't be saved to OneDrive. ` +
+        `Open <a href="/debug/onedrive" target="_blank" style="color:#fff;text-decoration:underline;">/debug/onedrive</a> ` +
+        `to see exactly what's wrong (admin only).`,
+        'error', 15000,
+      );
+    } else {
+      toast(escapeHtml(msg), 'error', 8000);
+    }
   }
 }
 
