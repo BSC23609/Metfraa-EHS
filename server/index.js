@@ -3,17 +3,35 @@
 // ============================================================================
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cookieSession = require('cookie-session');
 
 const authRoutes = require('./routes/auth');
 const formRoutes = require('./routes/forms');
 const adminRoutes = require('./routes/admin');
+const debugRoutes = require('./routes/debug');
 const { ALL_FORMS, INSPECTORS } = require('./lib/forms-config');
 const { requireAuth, attachUser } = require('./lib/auth-middleware');
+const { cleanEnv, cleanUrlBase } = require('./lib/clean-env');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = cleanEnv(process.env.PORT) || 3000;
+
+// --- Boot-time diagnostic logging (helps debug Render env issues from logs)
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const LOGO_PATH = path.join(PUBLIC_DIR, 'img', 'logo.png');
+console.log('--- Metfraa EHS boot ---');
+console.log('  cwd            :', process.cwd());
+console.log('  __dirname      :', __dirname);
+console.log('  public dir     :', PUBLIC_DIR, fs.existsSync(PUBLIC_DIR) ? '✓ exists' : '✗ MISSING');
+console.log('  logo file      :', LOGO_PATH, fs.existsSync(LOGO_PATH) ? `✓ exists (${fs.statSync(LOGO_PATH).size} bytes)` : '✗ MISSING');
+console.log('  APP_BASE_URL   :', JSON.stringify(process.env.APP_BASE_URL || '(unset)'));
+console.log('  cleaned base   :', JSON.stringify(cleanUrlBase(process.env.APP_BASE_URL)));
+if (process.env.APP_BASE_URL && process.env.APP_BASE_URL !== cleanUrlBase(process.env.APP_BASE_URL)) {
+  console.warn('  ⚠️  APP_BASE_URL was modified by cleanEnv — your Render env value contains junk (markdown, quotes, etc.)');
+}
+console.log('-----------------------');
 
 // --- Trust proxy (Render runs behind a load balancer; needed for secure cookies)
 app.set('trust proxy', 1);
@@ -25,21 +43,26 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // --- Sessions (signed cookies, no DB required)
 app.use(cookieSession({
   name: 'metfraa_ehs_session',
-  keys: [process.env.SESSION_SECRET || 'dev-only-please-set-SESSION_SECRET'],
+  keys: [cleanEnv(process.env.SESSION_SECRET) || 'dev-only-please-set-SESSION_SECRET'],
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   sameSite: 'lax',
-  secure: process.env.NODE_ENV === 'production',
+  secure: cleanEnv(process.env.NODE_ENV) === 'production',
   httpOnly: true,
 }));
 
 // --- Make user info available to all requests
 app.use(attachUser);
 
-// --- Static files (logo, CSS, client JS)
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// --- Static files (logo, CSS, client JS) — must be BEFORE any auth middleware
+//     Cache-Control set short so logo updates are picked up quickly while debugging.
+app.use(express.static(PUBLIC_DIR, {
+  maxAge: cleanEnv(process.env.NODE_ENV) === 'production' ? '1h' : 0,
+  fallthrough: true,
+}));
 
 // --- Public routes (no auth needed)
 app.use('/auth', authRoutes);
+app.use('/debug', debugRoutes);  // diagnostics — public so you can debug auth issues
 
 // --- Health check (Render uses this)
 app.get('/healthz', (req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -111,5 +134,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`[Metfraa EHS] Listening on port ${PORT}`);
-  console.log(`[Metfraa EHS] App URL: ${process.env.APP_BASE_URL || `http://localhost:${PORT}`}`);
+  console.log(`[Metfraa EHS] App URL: ${cleanUrlBase(process.env.APP_BASE_URL) || `http://localhost:${PORT}`}`);
+  console.log(`[Metfraa EHS] Debug endpoint: ${cleanUrlBase(process.env.APP_BASE_URL) || `http://localhost:${PORT}`}/debug/env`);
 });

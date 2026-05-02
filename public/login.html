@@ -9,11 +9,49 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .btn-microsoft {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      padding: 14px 20px;
+      margin-top: 12px;
+      border: 2px solid #00457A;
+      background: #fff;
+      color: #00457A;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 6px;
+      transition: all 0.18s;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-microsoft:hover {
+      background: #00457A;
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      text-decoration: none;
+    }
+    .btn-microsoft__icon { width: 20px; height: 20px; }
+    .auth-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 18px 0; font-size: 11px;
+      color: #888; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ''; flex: 1; height: 1px; background: #ddd;
+    }
+  </style>
 </head>
 <body>
   <div class="login-shell">
     <div class="login-side">
-      <img src="/img/logo.png" alt="Metfraa" class="login-logo">
+      <!-- Logo with fallback: if PNG fails to load, show inline SVG text -->
+      <img src="/img/logo.png" alt="Metfraa" class="login-logo"
+           onerror="this.outerHTML='<div style=&quot;font-family:Bebas Neue,sans-serif;font-size:36px;letter-spacing:3px;color:white;line-height:1;&quot;>METFRAA<div style=&quot;font-size:11px;letter-spacing:2px;margin-top:4px;color:#1B7BC4;&quot;>STEEL BUILDINGS PVT. LTD.</div></div>'">
 
       <div>
         <h1 class="login-headline">EHS<br>FORMS<br><span>PORTAL</span></h1>
@@ -30,7 +68,7 @@
         <div class="login-form-eyebrow">Restricted Access</div>
         <h2 class="login-form-title">Sign in to continue</h2>
         <p class="login-form-desc">
-          Use your Google account to access the EHS Forms portal.
+          Sign in with your Google or Microsoft account.
           Your name and email will be recorded with every submission for audit purposes.
         </p>
 
@@ -39,22 +77,38 @@
           Sign in with Google
         </a>
 
-        <!-- NEW MICROSOFT BUTTON -->
-        <a href="/auth/microsoft" class="btn-google" style="margin-top: 12px; border: 1px solid #8c8c8c; color: #333;">
-          <img class="btn-google__icon" alt="" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'%3E%3Cpath fill='%23f25022' d='M1 1h9v9H1z'/%3E%3Cpath fill='%2300a4ef' d='M11 1h9v9h-9z'/%3E%3Cpath fill='%237fba00' d='M1 11h9v9H1z'/%3E%3Cpath fill='%23ffb900' d='M11 11h9v9h-9z'/%3E%3C/svg%3E">
+        <div class="auth-divider">or</div>
+
+        <a href="/auth/microsoft" class="btn-microsoft">
+          <svg class="btn-microsoft__icon" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="1" width="10" height="10" fill="#F25022"/>
+            <rect x="12" y="1" width="10" height="10" fill="#7FBA00"/>
+            <rect x="1" y="12" width="10" height="10" fill="#00A4EF"/>
+            <rect x="12" y="12" width="10" height="10" fill="#FFB900"/>
+          </svg>
           Sign in with Microsoft
         </a>
 
         <div id="login-error" class="login-error" style="display:none"></div>
+
+        <div style="margin-top:24px;text-align:center;font-size:11px;color:#888;">
+          Trouble signing in? <a href="/debug/env" style="color:#005B96;">Check server config →</a>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
     const params = new URLSearchParams(location.search);
-    if (params.get('error')) {
+    const errCode = params.get('error');
+    if (errCode) {
       const err = document.getElementById('login-error');
-      err.textContent = 'Sign-in failed. Please try again.';
+      const msg = {
+        'no_code':       'No authorization code received.',
+        'oauth_failed':  'Sign-in failed. Please try again.',
+        'access_denied': 'You cancelled the sign-in.',
+      }[errCode] || `Sign-in error: ${errCode}`;
+      err.textContent = msg;
       err.style.display = 'block';
     }
   </script>

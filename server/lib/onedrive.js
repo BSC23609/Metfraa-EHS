@@ -14,12 +14,13 @@
 require('isomorphic-fetch'); // required by @microsoft/microsoft-graph-client
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 const { Client } = require('@microsoft/microsoft-graph-client');
+const { cleanEnv } = require('./clean-env');
 
-const TENANT_ID = process.env.AZURE_TENANT_ID;
-const CLIENT_ID = process.env.AZURE_CLIENT_ID;
-const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET;
-const USER_ID = process.env.ONEDRIVE_USER_ID;
-const ROOT_FOLDER = process.env.ONEDRIVE_ROOT_FOLDER || 'Metfraa-EHS';
+const TENANT_ID = cleanEnv(process.env.AZURE_TENANT_ID);
+const CLIENT_ID = cleanEnv(process.env.AZURE_CLIENT_ID);
+const CLIENT_SECRET = cleanEnv(process.env.AZURE_CLIENT_SECRET);
+const USER_ID = cleanEnv(process.env.ONEDRIVE_USER_ID);
+const ROOT_FOLDER = cleanEnv(process.env.ONEDRIVE_ROOT_FOLDER) || 'Metfraa-EHS';
 
 let msalApp;
 function getMsalApp() {

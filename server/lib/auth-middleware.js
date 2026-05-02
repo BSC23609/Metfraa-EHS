@@ -2,7 +2,9 @@
 // Authentication helpers — populates req.user from the session cookie
 // ============================================================================
 
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+const { cleanEnv } = require('./clean-env');
+
+const ADMIN_EMAILS = cleanEnv(process.env.ADMIN_EMAILS)
   .split(',')
   .map(e => e.trim().toLowerCase())
   .filter(Boolean);
