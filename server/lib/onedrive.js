@@ -199,6 +199,40 @@ async function fileExists(relativePath) {
   }
 }
 
+// Get file metadata (id, name, size, webUrl, etc.) without downloading content
+async function getFileInfo(relativePath) {
+  const client = getGraphClient();
+  try {
+    return await client.api(itemByPath(relativePath)).get();
+  } catch (err) {
+    if (err.statusCode === 404) return null;
+    throw err;
+  }
+}
+
+// Get a temporary download URL that bypasses auth (good for proxying large
+// files without buffering them in our memory). Microsoft generates a short-lived
+// pre-signed URL we can fetch from anonymously.
+async function getDownloadUrl(relativePath) {
+  const info = await getFileInfo(relativePath);
+  if (!info) return null;
+  return info['@microsoft.graph.downloadUrl'] || null;
+}
+
+// List the immediate children of a folder. Returns array of DriveItem objects
+// from Microsoft Graph (each has name, size, file/folder, @microsoft.graph.downloadUrl).
+async function listFolder(relativeFolder) {
+  const client = getGraphClient();
+  const url = `${folderByPath(relativeFolder)}:/children`;
+  try {
+    const result = await client.api(url).get();
+    return result.value || [];
+  } catch (err) {
+    if (err.statusCode === 404) return [];
+    throw err;
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Public API
 // ----------------------------------------------------------------------------
@@ -208,5 +242,8 @@ module.exports = {
   uploadFile,
   downloadFile,
   fileExists,
+  getFileInfo,
+  getDownloadUrl,
+  listFolder,
   ROOT_FOLDER,
 };

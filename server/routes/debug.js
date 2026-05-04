@@ -184,15 +184,25 @@ router.get('/onedrive', async (req, res) => {
       };
     } else {
       const errBody = await userResp.text();
+      let diagnosis;
+      let summary;
+      if (userResp.status === 404) {
+        diagnosis = `The user "${onedriveUserId}" does NOT exist in your Azure AD tenant. This means: either (a) the email is just an alias/forwarder at your domain registrar but not a real M365 user, OR (b) the tenant ID is wrong. Buy at least one M365 Business Basic license and create this user, or change ONEDRIVE_USER_ID to a different account that exists.`;
+        summary = `❌ "User not found" — ${onedriveUserId} is not a valid M365 user in your tenant.`;
+      } else if (userResp.status === 403) {
+        diagnosis = `Your Azure App Registration is missing the User.Read.All permission, so it can't look up users by email. Fix: Azure portal → App registrations → your app → API permissions → Add "User.Read.All" (Application permissions, NOT Delegated) → Grant admin consent. Note: form submissions may still fail until this is fixed because resolving the user is part of the upload flow.`;
+        summary = `❌ Insufficient privileges — your app needs the User.Read.All permission added in Azure.`;
+      } else {
+        diagnosis = `Unexpected HTTP ${userResp.status} from Microsoft Graph during user lookup.`;
+        summary = `❌ User lookup failed with HTTP ${userResp.status}`;
+      }
       result.checks.user_lookup = {
         pass: false,
         status: userResp.status,
         error: errBody.slice(0, 500),
-        diagnosis: userResp.status === 404
-          ? `The user "${onedriveUserId}" does NOT exist in your Azure AD tenant. This means: either (a) the email is just an alias/forwarder at your domain registrar but not a real M365 user, OR (b) the tenant ID is wrong. Buy at least one M365 Business Basic license and create this user, or change ONEDRIVE_USER_ID to a different account that exists.`
-          : 'Unknown error during user lookup',
+        diagnosis,
       };
-      result.summary = `❌ "User not found" — ${onedriveUserId} is not a valid M365 user in your tenant.`;
+      result.summary = summary;
       return res.json(result);
     }
   } catch (err) {

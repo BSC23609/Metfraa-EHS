@@ -11,6 +11,7 @@ const authRoutes = require('./routes/auth');
 const formRoutes = require('./routes/forms');
 const adminRoutes = require('./routes/admin');
 const debugRoutes = require('./routes/debug');
+const submissionRoutes = require('./routes/submissions');
 const { ALL_FORMS, INSPECTORS } = require('./lib/forms-config');
 const { requireAuth, attachUser } = require('./lib/auth-middleware');
 const { cleanEnv, cleanUrlBase } = require('./lib/clean-env');
@@ -108,12 +109,21 @@ app.get('/api/me', (req, res) => {
 // --- Form submission routes
 app.use('/api/submit', formRoutes);
 
+// --- "My Submissions" / "All Submissions" — mounted at /api so the router's
+//     /submissions and /pdf/:formId/:submissionId endpoints both work.
+app.use('/api', submissionRoutes);
+
 // --- Admin routes
 app.use('/admin', adminRoutes);
 
 // --- Dashboard (the main app shell)
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
+});
+
+// --- Submissions page
+app.get('/submissions', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'submissions.html'));
 });
 
 // --- Form filling page (single-page renderer for any form)
