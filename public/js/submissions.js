@@ -41,11 +41,14 @@ let lastResponse = null;
   document.getElementById('apply-filters').addEventListener('click', loadSubmissions);
   document.getElementById('clear-filters').addEventListener('click', () => {
     document.getElementById('filter-form').value = '';
+    document.getElementById('filter-status').value = '';
     document.getElementById('filter-start').value = '';
     document.getElementById('filter-end').value = '';
     if (document.getElementById('filter-submitter')) {
       document.getElementById('filter-submitter').value = '';
     }
+    // Update URL to remove ?status=...
+    history.replaceState(null, '', '/submissions');
     loadSubmissions();
   });
   document.getElementById('refresh-btn').addEventListener('click', () => loadSubmissions(true));
@@ -57,6 +60,16 @@ let lastResponse = null;
     if (e.key === 'Escape') closePdfModal();
   });
 
+  // Read initial filters from URL query string (e.g., /submissions?status=pending)
+  const params = new URLSearchParams(location.search);
+  if (params.get('status')) {
+    document.getElementById('filter-status').value = params.get('status').toLowerCase();
+  }
+  if (params.get('formId')) {
+    // Wait until the form dropdown is populated by the first response, then re-apply
+    // (handled in renderResults below)
+  }
+
   await loadSubmissions();
 })();
 
@@ -66,12 +79,14 @@ async function loadSubmissions(forceFresh = false) {
 
   const params = new URLSearchParams();
   const formId = document.getElementById('filter-form').value;
+  const status = document.getElementById('filter-status').value;
   const startDate = document.getElementById('filter-start').value;
   const endDate = document.getElementById('filter-end').value;
   const submitterEl = document.getElementById('filter-submitter');
   const submitter = submitterEl ? submitterEl.value : '';
 
   if (formId) params.set('formId', formId);
+  if (status) params.set('status', status);
   if (startDate) params.set('startDate', startDate);
   if (endDate) params.set('endDate', endDate);
   if (submitter) params.set('submitter', submitter);
@@ -125,6 +140,28 @@ function renderResults(data) {
     submSel.innerHTML = '<option value="">All users</option>' +
       data.submitters.map(s => `<option value="${escapeAttr(s.email)}">${escapeHtml(s.name)} — ${escapeHtml(s.email)}</option>`).join('');
     submSel.value = currentVal;
+  }
+
+  // Render status counts bar
+  const countsBar = document.getElementById('status-counts-bar');
+  const counts = data.statusCounts || { all: 0, pending: 0, approved: 0, rejected: 0 };
+  if (counts.all > 0) {
+    countsBar.innerHTML = `
+      <div class="status-counts">
+        <div class="status-count" data-status=""><span class="num">${counts.all}</span><span class="label">Total</span></div>
+        ${counts.pending > 0 ? `<div class="status-count status-count--pending" data-status="pending"><span class="num">${counts.pending}</span><span class="label">⏳ Pending</span></div>` : ''}
+        ${counts.approved > 0 ? `<div class="status-count status-count--approved" data-status="approved"><span class="num">${counts.approved}</span><span class="label">✓ Approved</span></div>` : ''}
+        ${counts.rejected > 0 ? `<div class="status-count status-count--rejected" data-status="rejected"><span class="num">${counts.rejected}</span><span class="label">✕ Rejected</span></div>` : ''}
+      </div>`;
+    // Make the chips clickable to switch the status filter
+    countsBar.querySelectorAll('.status-count').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.getElementById('filter-status').value = chip.dataset.status;
+        loadSubmissions();
+      });
+    });
+  } else {
+    countsBar.innerHTML = '';
   }
 
   // Render table

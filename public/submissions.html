@@ -43,6 +43,15 @@
         </select>
       </div>
       <div class="filter-field">
+        <label>Status</label>
+        <select id="filter-status">
+          <option value="">All statuses</option>
+          <option value="pending">⏳ Pending only</option>
+          <option value="approved">✓ Approved only</option>
+          <option value="rejected">✕ Rejected only</option>
+        </select>
+      </div>
+      <div class="filter-field">
         <label>From date</label>
         <input type="date" id="filter-start">
       </div>
@@ -59,6 +68,9 @@
       <button id="apply-filters" class="btn-submit btn-submit--small" type="button">Apply</button>
       <button id="clear-filters" class="btn-secondary" type="button">Clear</button>
     </div>
+
+    <!-- Status counts bar (shown when API returns counts) -->
+    <div id="status-counts-bar"></div>
 
     <div id="submissions-list">
       <div class="loading">Loading submissions…</div>

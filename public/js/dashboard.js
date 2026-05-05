@@ -44,6 +44,20 @@
       .catch(() => {});
   }
 
+  // Fetch this user's own pending count (separate from approver count)
+  fetch('/api/my-pending-count')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) return;
+      const link = document.getElementById('my-pending-link');
+      const badge = document.getElementById('my-pending-badge');
+      if (data.count > 0) {
+        link.style.display = '';
+        badge.textContent = String(data.count);
+      }
+    })
+    .catch(() => {});
+
   // Group forms
   const general = forms.filter(f => f.category === 'general');
   const equipment = forms.filter(f => f.category === 'equipment');

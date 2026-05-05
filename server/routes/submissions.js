@@ -22,6 +22,7 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
 const onedrive = require('../lib/onedrive');
+const pendingStore = require('../lib/pending-store');
 const { ALL_FORMS, FORMS_BY_ID } = require('../lib/forms-config');
 
 const router = express.Router();
@@ -136,7 +137,7 @@ async function loadFormSubmissions(form) {
 
 router.get('/submissions', async (req, res) => {
   try {
-    const { formId, submitter, startDate, endDate } = req.query;
+    const { formId, submitter, startDate, endDate, status } = req.query;
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
 
     // Decide which forms to query
@@ -144,18 +145,54 @@ router.get('/submissions', async (req, res) => {
       ? (FORMS_BY_ID[formId] ? [FORMS_BY_ID[formId]] : [])
       : ALL_FORMS;
 
-    // Load in parallel
-    const allRows = (await Promise.all(formsToScan.map(loadFormSubmissions))).flat();
+    // Load master logs (approved + rejected) AND pending submissions in parallel
+    const [masterLogRows, pendingRowsRaw] = await Promise.all([
+      Promise.all(formsToScan.map(loadFormSubmissions)).then(arrs => arrs.flat()),
+      pendingStore.listAllPending().catch(err => {
+        console.warn('[submissions] failed to list pending:', err.message);
+        return [];
+      }),
+    ]);
+
+    // Convert pending submissions into the same shape as master log rows
+    const pendingRows = pendingRowsRaw
+      .filter(p => formsToScan.find(f => f.id === p.formId))
+      .map(p => {
+        const form = FORMS_BY_ID[p.formId];
+        const fields = p.data.fields || {};
+        return {
+          formId: p.formId,
+          formCode: form?.code || p.formId,
+          formTitle: form?.title || p.formId,
+          formCategory: form?.category || '',
+          submissionId: p.submissionId,
+          submittedAt: formatPendingDate(p.data.submittedAt),
+          submittedByName: p.data.user?.name || '',
+          submittedByEmail: p.data.user?.email || '',
+          keyLabel: 'Identifier',
+          keyValue: fields.equipment_no || fields.project_name || fields.site_name
+                  || fields.employee_name || fields.meeting_no || fields.permit_no || '',
+          pdfLink: '',
+          status: 'Pending',
+          reviewerName: '',
+          reviewedAt: '',
+          rejectReason: '',
+        };
+      });
+
+    const allRows = [...masterLogRows, ...pendingRows];
 
     // Filter
     const userEmail = (req.user.email || '').toLowerCase();
     const admin = isAdmin(req);
+    const statusFilter = status ? status.toLowerCase() : '';
 
     let filtered = allRows.filter(r => {
       if (!admin && (r.submittedByEmail || '').toLowerCase() !== userEmail) return false;
       if (admin && submitter && (r.submittedByEmail || '').toLowerCase() !== submitter.toLowerCase()) return false;
       if (startDate && (r.submittedAt || '') < startDate) return false;
       if (endDate && (r.submittedAt || '') > `${endDate} 23:59:59`) return false;
+      if (statusFilter && (r.status || 'Approved').toLowerCase() !== statusFilter) return false;
       return true;
     });
 
@@ -178,12 +215,31 @@ router.get('/submissions', async (req, res) => {
       submitters = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
     }
 
+    // Status counts (computed BEFORE applying status filter, but AFTER ownership/date/submitter filters)
+    const visibleForCounts = allRows.filter(r => {
+      if (!admin && (r.submittedByEmail || '').toLowerCase() !== userEmail) return false;
+      if (admin && submitter && (r.submittedByEmail || '').toLowerCase() !== submitter.toLowerCase()) return false;
+      if (startDate && (r.submittedAt || '') < startDate) return false;
+      if (endDate && (r.submittedAt || '') > `${endDate} 23:59:59`) return false;
+      return true;
+    });
+    const statusCounts = {
+      all: visibleForCounts.length,
+      pending: visibleForCounts.filter(r => (r.status || '').toLowerCase() === 'pending').length,
+      approved: visibleForCounts.filter(r => {
+        const s = (r.status || 'Approved').toLowerCase();
+        return s === 'approved' || s === ''; // treat empty as approved (legacy rows)
+      }).length,
+      rejected: visibleForCounts.filter(r => (r.status || '').toLowerCase() === 'rejected').length,
+    };
+
     res.json({
       isAdmin: admin,
       total: filtered.length,
       truncated: filtered.length > limit,
       rows: filtered.slice(0, limit),
       submitters,
+      statusCounts,
       forms: ALL_FORMS.map(f => ({ id: f.id, code: f.code, title: f.title, category: f.category })),
     });
   } catch (err) {
@@ -191,6 +247,16 @@ router.get('/submissions', async (req, res) => {
     res.status(500).json({ error: err.message || 'Failed to load submissions' });
   }
 });
+
+// Convert ISO timestamp from pending JSON to "YYYY-MM-DD HH:MM:SS" matching master log format
+function formatPendingDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toISOString().replace('T', ' ').slice(0, 19);
+  } catch {
+    return iso;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/pdf/:formId/:submissionId
@@ -293,5 +359,20 @@ function clearCache() {
   for (const k of Object.keys(CACHE)) delete CACHE[k];
 }
 router.clearCache = clearCache;
+
+// Lightweight endpoint for the dashboard badge — returns just the count of
+// the current user's PENDING submissions. Doesn't touch master logs at all,
+// only reads the _Pending folder, so it's fast.
+router.get('/my-pending-count', async (req, res) => {
+  try {
+    const userEmail = (req.user.email || '').toLowerCase();
+    const all = await pendingStore.listAllPending().catch(() => []);
+    const mine = all.filter(p => (p.data.user?.email || '').toLowerCase() === userEmail);
+    res.json({ count: mine.length });
+  } catch (err) {
+    console.error('[GET /api/my-pending-count]', err);
+    res.status(500).json({ error: err.message, count: 0 });
+  }
+});
 
 module.exports = router;
