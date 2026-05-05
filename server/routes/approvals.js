@@ -232,6 +232,13 @@ router.post('/:formId/:subId/approve', express.json({ limit: '10mb' }), async (r
     });
   } catch (err) {
     console.error('[POST approve]', err);
+    const status = err.statusCode || err.status;
+    const msg = String(err.message || '').toLowerCase();
+    if (status === 423 || /locked|locked\.\s/.test(msg)) {
+      return res.status(423).json({
+        error: 'OneDrive resource is locked. This usually means the master log is open in Excel. Please close it and try again.',
+      });
+    }
     res.status(500).json({ error: err.message || 'Approval failed' });
   }
 });
@@ -294,6 +301,13 @@ router.post('/:formId/:subId/reject', express.json(), async (req, res) => {
     });
   } catch (err) {
     console.error('[POST reject]', err);
+    const status = err.statusCode || err.status;
+    const msg = String(err.message || '').toLowerCase();
+    if (status === 423 || /locked/.test(msg)) {
+      return res.status(423).json({
+        error: 'OneDrive resource is locked. This usually means the master log is open in Excel. Please close it and try again.',
+      });
+    }
     res.status(500).json({ error: err.message || 'Rejection failed' });
   }
 });

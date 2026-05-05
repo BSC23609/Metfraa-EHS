@@ -249,13 +249,31 @@ router.get('/submissions', async (req, res) => {
 });
 
 // Convert ISO timestamp from pending JSON to "YYYY-MM-DD HH:MM:SS" matching master log format
-function formatPendingDate(iso) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toISOString().replace('T', ' ').slice(0, 19);
-  } catch {
-    return iso;
+// Normalize a pending submission's submittedAt value to an IST string.
+// forms.js writes IST format directly, but older pending submissions (from
+// before the timezone fix) wrote ISO format with a 'Z'. Detect both.
+function formatPendingDate(value) {
+  if (!value) return '';
+  const str = String(value);
+  // Already IST format ("YYYY-MM-DD HH:MM:SS") — pass through
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(str)) {
+    return str;
   }
+  // ISO format ("YYYY-MM-DDTHH:MM:SS...Z") — convert UTC to IST
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    try {
+      // Use sv-SE locale with Asia/Kolkata to get "YYYY-MM-DD HH:MM:SS"
+      return new Date(str).toLocaleString('sv-SE', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+      });
+    } catch {
+      return str;
+    }
+  }
+  return str;
 }
 
 // ---------------------------------------------------------------------------

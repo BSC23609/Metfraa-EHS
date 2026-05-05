@@ -90,6 +90,41 @@ function folderByPath(relativeFolder) {
 }
 
 // ----------------------------------------------------------------------------
+// Retry helper — OneDrive sometimes returns 423 "locked" errors when a file
+// is open in Excel or has active activity. Retry with exponential backoff.
+// ----------------------------------------------------------------------------
+
+function isRetryableError(err) {
+  if (!err) return false;
+  const status = err.statusCode || err.status;
+  // 423 = locked (most common during master log writes)
+  // 429 = rate limited
+  // 503 = service unavailable
+  // 504 = gateway timeout
+  if (status === 423 || status === 429 || status === 503 || status === 504) return true;
+  // Sometimes the error is in the message even if statusCode isn't set
+  const msg = String(err.message || '').toLowerCase();
+  if (/locked|throttle|rate.*limit|temporarily unavailable/.test(msg)) return true;
+  return false;
+}
+
+async function withRetry(operation, maxAttempts = 3, baseDelayMs = 1500) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryableError(err) || attempt === maxAttempts) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt - 1); // 1.5s, 3s, 6s
+      console.warn(`[onedrive] retryable error (attempt ${attempt}/${maxAttempts}), waiting ${delay}ms: ${err.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw lastErr;
+}
+
+// ----------------------------------------------------------------------------
 // Folder creation — creates intermediate folders if missing
 // ----------------------------------------------------------------------------
 
@@ -133,21 +168,20 @@ async function ensureFolder(relativeFolder) {
 const SMALL_FILE_LIMIT = 4 * 1024 * 1024;
 
 async function uploadFile(relativePath, buffer, mimeType = 'application/octet-stream') {
-  const client = getGraphClient();
   const folder = relativePath.split('/').slice(0, -1).join('/');
   await ensureFolder(folder);
 
   if (buffer.length <= SMALL_FILE_LIMIT) {
-    // Simple upload
-    const url = `${itemByPath(relativePath)}:/content`;
-    const result = await client
-      .api(url)
-      .header('Content-Type', mimeType)
-      .put(buffer);
-    return result;
+    // Simple upload (with retry for 423 locked errors)
+    return withRetry(async () => {
+      const client = getGraphClient();
+      const url = `${itemByPath(relativePath)}:/content`;
+      return client.api(url).header('Content-Type', mimeType).put(buffer);
+    });
   }
 
   // Large-file upload session
+  const client = getGraphClient();
   const sessionUrl = `${itemByPath(relativePath)}:/createUploadSession`;
   const session = await client.api(sessionUrl).post({
     item: { '@microsoft.graph.conflictBehavior': 'replace' },
@@ -235,22 +269,23 @@ async function listFolder(relativeFolder) {
 
 // Delete a file or folder by path. Folders are deleted recursively.
 async function deletePath(relativePath) {
-  const client = getGraphClient();
-  const url = itemByPath(relativePath);
-  await client.api(url).delete();
+  return withRetry(async () => {
+    const client = getGraphClient();
+    const url = itemByPath(relativePath);
+    return client.api(url).delete();
+  });
 }
 
 // Move/copy a file. Used to promote pending photos → final Reports folder.
-// destinationFolder: relative folder path under ROOT (e.g. "01-Toolbox-Talks/Reports/2026/05/Photos/SUB-123")
-// newName (optional): new filename in destination
 async function moveFile(srcRelativePath, destinationFolder, newName = null) {
-  const client = getGraphClient();
-  // First we need the parent folder's driveItem id
   await ensureFolder(destinationFolder);
-  const destFolder = await client.api(folderByPath(destinationFolder)).get();
-  const body = { parentReference: { id: destFolder.id } };
-  if (newName) body.name = newName;
-  return client.api(itemByPath(srcRelativePath)).patch(body);
+  return withRetry(async () => {
+    const client = getGraphClient();
+    const destFolder = await client.api(folderByPath(destinationFolder)).get();
+    const body = { parentReference: { id: destFolder.id } };
+    if (newName) body.name = newName;
+    return client.api(itemByPath(srcRelativePath)).patch(body);
+  });
 }
 
 // ----------------------------------------------------------------------------
