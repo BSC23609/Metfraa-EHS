@@ -8,11 +8,10 @@ const sharp = require('sharp');
 
 const { FORMS_BY_ID } = require('../lib/forms-config');
 const pendingStore = require('../lib/pending-store');
-// We must import the IST date enforcer here!
-const { toIstString } = require('../lib/datetime'); 
 
 const router = express.Router();
 
+// In-memory storage for uploads (we never persist them locally)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024, files: 60 }, 
@@ -31,6 +30,7 @@ router.post('/:formId', upload.any(), async (req, res, next) => {
     }
 
     const now = new Date();
+    // Enforced IST ID Generation
     const submissionId = generateSubmissionId(form, now);
 
     const photosByKey = {};
@@ -62,8 +62,8 @@ router.post('/:formId', upload.any(), async (req, res, next) => {
       formId: form.id,
       formCode: form.code,
       formTitle: form.title,
-      // FIX: This forces the clean IST format immediately upon draft creation
-      submittedAt: toIstString(now), 
+      // ENFORCED IST STRING FOR DASHBOARD & MASTER LOG
+      submittedAt: getIstString(now), 
       user: {
         name: req.user.name,
         email: req.user.email,
@@ -88,18 +88,32 @@ router.post('/:formId', upload.any(), async (req, res, next) => {
 });
 
 // ----------------------------------------------------------------------------
-// Helpers
+// Helpers: Bulletproof IST Converters (No external dependencies)
 // ----------------------------------------------------------------------------
 
+function getIstParts(date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const map = {};
+  parts.forEach(p => map[p.type] = p.value);
+  if (map.hour === '24') map.hour = '00'; // Handle midnight edge case
+  return map;
+}
+
+function getIstString(date) {
+  const p = getIstParts(date);
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}
+
 function generateSubmissionId(form, date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const hh = String(date.getHours()).padStart(2, '0');
-  const min = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
+  const p = getIstParts(date);
   const rand = Math.floor(Math.random() * 9000 + 1000);
-  return `${form.code}-${yyyy}${mm}${dd}-${hh}${min}${ss}-${rand}`;
+  return `${form.code}-${p.year}${p.month}${p.day}-${p.hour}${p.minute}${p.second}-${rand}`;
 }
 
 async function compressImage(buffer) {
