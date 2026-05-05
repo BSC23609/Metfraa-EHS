@@ -176,9 +176,11 @@ router.post('/:formId/:subId/approve', express.json({ limit: '10mb' }), async (r
     const pdfBuffer = await generatePdfReport(form, finalSubmission, photoBuffers, approval);
 
     // Upload PDF + photos to final destinations
-    const submittedDate = new Date(original.submittedAt);
-    const yyyy = submittedDate.getFullYear();
-    const mm = String(submittedDate.getMonth() + 1).padStart(2, '0');
+    // original.submittedAt is the IST string "YYYY-MM-DD HH:MM:SS" — parse the
+    // year/month directly from the string to avoid timezone reinterpretation.
+    const submittedAtMatch = String(original.submittedAt || '').match(/^(\d{4})-(\d{2})/);
+    const yyyy = submittedAtMatch ? submittedAtMatch[1] : String(new Date().getFullYear());
+    const mm = submittedAtMatch ? submittedAtMatch[2] : String(new Date().getMonth() + 1).padStart(2, '0');
     const finalPhotoFolder = `${form.folder}/Reports/${yyyy}/${mm}/Photos/${subId}`;
 
     const photoLinks = { fields: {}, checklist: {} };

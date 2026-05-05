@@ -300,13 +300,28 @@ async function doReject() {
 
 function formatDate(s) {
   if (!s) return '—';
-  const parsed = new Date(s.replace ? s.replace(' ', 'T') : s);
-  if (isNaN(parsed)) return s;
-  return parsed.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
+  // Backend stores timestamps as IST already — display as-is without re-conversion.
+  // submittedAt may also be an ISO string from the pending JSON (with a 'Z'); handle both.
+  let str = String(s);
+  if (str.endsWith('Z')) {
+    // Pending JSON stores ISO; convert to IST display
+    const d = new Date(str);
+    if (!isNaN(d)) {
+      return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+    }
+  }
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (!m) return s;
+  const [, yyyy, mm, dd, hh, min] = m;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let h = parseInt(hh, 10);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${dd} ${months[parseInt(mm, 10) - 1]} ${yyyy}, ${String(h).padStart(2, '0')}:${min} ${ampm}`;
 }
 
 function escapeHtml(s) {

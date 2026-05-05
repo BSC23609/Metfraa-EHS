@@ -7,6 +7,7 @@
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
+const { toIstString } = require('./datetime');
 
 // Brand colors
 const COLOR_BLACK = '#000000';
@@ -100,7 +101,7 @@ function drawSubmissionMeta(doc, submission, approval) {
   // Submission ID + submitted-at + user
   const left = [
     ['Submission ID', submission.submissionId],
-    ['Submitted At', new Date(submission.submittedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })],
+    ['Submitted At', formatPrettyIst(submission.submittedAt)],
   ];
   const right = [
     ['Submitted By', submission.user.name],
@@ -321,9 +322,7 @@ function drawApprovalBlock(doc, approval) {
      .text('APPROVED', x + 16, y + 10, { lineBreak: false });
 
   doc.fillColor(COLOR_BLACK).font('Helvetica').fontSize(10);
-  const reviewedAt = approval.reviewedAt
-    ? new Date(approval.reviewedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
-    : '—';
+  const reviewedAt = approval.reviewedAt ? formatPrettyIst(approval.reviewedAt) : '—';
   doc.text(`Reviewed by: ${approval.reviewerName || '—'}  (${approval.reviewerEmail || '—'})`,
            x + 16, y + 30, { width: w - 32, lineBreak: false });
   doc.text(`Reviewed at: ${reviewedAt}`,
@@ -355,6 +354,27 @@ function drawFooter(doc, submission) {
     // Restore margin
     doc.page.margins.bottom = originalBottom;
   }
+}
+
+// Format a timestamp for display in the PDF.
+// Handles two input shapes:
+//   - "YYYY-MM-DD HH:MM:SS"  ← already IST (from forms.js / master log) — use as-is
+//   - ISO 8601 with 'Z'       ← UTC (from older code paths) — convert to IST
+function formatPrettyIst(s) {
+  if (!s) return '—';
+  let str = String(s);
+  if (str.endsWith('Z')) {
+    // Convert UTC ISO to IST
+    str = toIstString(new Date(str));
+  }
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (!m) return s;
+  const [, yyyy, mm, dd, hh, min] = m;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let h = parseInt(hh, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${dd} ${months[parseInt(mm, 10) - 1]} ${yyyy}, ${String(h).padStart(2, '0')}:${min} ${ampm} IST`;
 }
 
 function ensureSpace(doc, needed) {

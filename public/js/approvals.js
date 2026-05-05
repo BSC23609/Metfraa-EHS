@@ -127,13 +127,27 @@ function rowHtml(r) {
 
 function formatDate(s) {
   if (!s) return '—';
-  const parsed = new Date(s.replace(' ', 'T'));
-  if (isNaN(parsed)) return s;
-  return parsed.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
+  let str = String(s);
+  // Pending JSON timestamps are full ISO strings ending with 'Z' — convert to IST display
+  if (str.endsWith('Z')) {
+    const d = new Date(str);
+    if (!isNaN(d)) {
+      return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+    }
+  }
+  // Master log timestamps are already IST in the format "YYYY-MM-DD HH:MM:SS"
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (!m) return s;
+  const [, yyyy, mm, dd, hh, min] = m;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let h = parseInt(hh, 10);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${dd} ${months[parseInt(mm, 10) - 1]} ${yyyy}, ${String(h).padStart(2, '0')}:${min} ${ampm}`;
 }
 
 function escapeHtml(s) {

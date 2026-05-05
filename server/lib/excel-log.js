@@ -16,6 +16,7 @@
 
 const ExcelJS = require('exceljs');
 const onedrive = require('./onedrive');
+const { toIstString } = require('./datetime');
 
 // Brand colors (hex without #, ARGB format with FF prefix for full opacity)
 const BRAND_BLUE_ARGB = 'FF005B96';
@@ -149,7 +150,11 @@ function ensureApprovalColumns(ws, form) {
 function buildDataRow(form, submission, fileLinks, approval) {
   const row = [
     submission.submissionId,
-    new Date(submission.submittedAt).toISOString().replace('T', ' ').slice(0, 19),
+    // submission.submittedAt is already an IST string (set by forms.js) — pass it
+    // straight through. If it's a Date object or undefined, fall back to formatting.
+    typeof submission.submittedAt === 'string' && submission.submittedAt.length >= 16
+      ? submission.submittedAt
+      : toIstString(submission.submittedAt || new Date()),
     submission.user.name,
     submission.user.email,
   ];
@@ -175,7 +180,7 @@ function buildDataRow(form, submission, fileLinks, approval) {
     row.push(approval.status || '');
     row.push(approval.reviewerName || '');
     row.push(approval.reviewerEmail || '');
-    row.push(new Date(approval.reviewedAt || Date.now()).toISOString().replace('T', ' ').slice(0, 19));
+    row.push(toIstString(approval.reviewedAt || new Date()));
     row.push(formatEdits(approval.edits));
     row.push(approval.rejectReason || '');
   } else {

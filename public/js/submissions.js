@@ -310,14 +310,17 @@ function closePdfModal() {
 
 function formatDate(s) {
   if (!s) return '—';
-  // Accept "2026-04-30 10:30:15" or "2026-04-30T10:30:15"
-  const parsed = new Date(s.replace(' ', 'T'));
-  if (isNaN(parsed)) return s;
-  return parsed.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
+  // The backend stores all timestamps as IST strings already (e.g. "2026-05-05 11:10:00").
+  // Treating the string as a Date and re-applying the IST timezone would shift it
+  // by another +05:30, so we parse the components manually and reformat.
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (!m) return s;
+  const [, yyyy, mm, dd, hh, min] = m;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let h = parseInt(hh, 10);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${dd} ${months[parseInt(mm, 10) - 1]} ${yyyy}, ${String(h).padStart(2, '0')}:${min} ${ampm}`;
 }
 
 function escapeHtml(s) {
