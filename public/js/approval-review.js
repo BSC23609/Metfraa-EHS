@@ -300,11 +300,9 @@ async function doReject() {
 
 function formatDate(s) {
   if (!s) return '—';
-  // Backend stores timestamps as IST already — display as-is without re-conversion.
-  // submittedAt may also be an ISO string from the pending JSON (with a 'Z'); handle both.
   let str = String(s);
-  if (str.endsWith('Z')) {
-    // Pending JSON stores ISO; convert to IST display
+  // Detect ISO format (has T separator) — old pending submissions stored ISO timestamps
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
     const d = new Date(str);
     if (!isNaN(d)) {
       return d.toLocaleString('en-IN', {

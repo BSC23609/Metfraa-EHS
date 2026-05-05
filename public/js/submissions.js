@@ -310,10 +310,20 @@ function closePdfModal() {
 
 function formatDate(s) {
   if (!s) return '—';
-  // The backend stores all timestamps as IST strings already (e.g. "2026-05-05 11:10:00").
-  // Treating the string as a Date and re-applying the IST timezone would shift it
-  // by another +05:30, so we parse the components manually and reformat.
-  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  let str = String(s);
+  // Detect ISO UTC format (has T separator and ends with Z) and convert to IST display
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d)) {
+      return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+    }
+  }
+  // Already-IST string ("YYYY-MM-DD HH:MM:SS") — display as-is
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
   if (!m) return s;
   const [, yyyy, mm, dd, hh, min] = m;
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];

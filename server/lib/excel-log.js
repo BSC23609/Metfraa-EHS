@@ -150,11 +150,12 @@ function ensureApprovalColumns(ws, form) {
 function buildDataRow(form, submission, fileLinks, approval) {
   const row = [
     submission.submissionId,
-    // submission.submittedAt is already an IST string (set by forms.js) — pass it
-    // straight through. If it's a Date object or undefined, fall back to formatting.
-    typeof submission.submittedAt === 'string' && submission.submittedAt.length >= 16
-      ? submission.submittedAt
-      : toIstString(submission.submittedAt || new Date()),
+    // submission.submittedAt may arrive in two shapes:
+    //   - IST string  "2026-05-05 11:10:00"  (new forms.js writes this)
+    //   - ISO string  "2026-05-05T06:26:17.278Z"  (older pending submissions
+    //     created before the timezone fix landed)
+    // We always write the IST formatted string to the master log.
+    formatSubmittedAt(submission.submittedAt),
     submission.user.name,
     submission.user.email,
   ];
@@ -193,6 +194,26 @@ function buildDataRow(form, submission, fileLinks, approval) {
 // `edits` is an object like:
 //   { "fields.project_name": ["Old Project", "New Project"],
 //     "checklist.3.result": ["NO", "YES"] }
+// Returns an IST-formatted "YYYY-MM-DD HH:MM:SS" string regardless of input shape.
+// Handles three cases:
+//   1. Already-IST string  "2026-05-05 11:10:00"     → returned as-is
+//   2. ISO UTC string      "2026-05-05T06:26:17.278Z" → converted to IST
+//   3. Date object / null / anything else            → uses toIstString fallback
+function formatSubmittedAt(value) {
+  if (typeof value === 'string') {
+    // ISO format: "YYYY-MM-DDTHH:MM:SS..." (with T separator and usually Z suffix)
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      return toIstString(new Date(value));
+    }
+    // Already IST format: "YYYY-MM-DD HH:MM:SS" (with space separator)
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(value)) {
+      return value;
+    }
+  }
+  // Fallback: format whatever we got as IST
+  return toIstString(value || new Date());
+}
+
 function formatEdits(edits) {
   if (!edits || Object.keys(edits).length === 0) return '';
   const parts = [];

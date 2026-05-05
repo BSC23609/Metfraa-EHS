@@ -128,8 +128,8 @@ function rowHtml(r) {
 function formatDate(s) {
   if (!s) return '—';
   let str = String(s);
-  // Pending JSON timestamps are full ISO strings ending with 'Z' — convert to IST display
-  if (str.endsWith('Z')) {
+  // Detect ISO format (has T separator) and convert to IST display
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
     const d = new Date(str);
     if (!isNaN(d)) {
       return d.toLocaleString('en-IN', {
