@@ -141,19 +141,12 @@ function renderField(f) {
         `).join('')}
       </div>`);
     case 'inspector':
-      // Dropdown (with logged-in user pre-selected) + free-text override
-      const isCustom = false;
+      // Prefilled editable textbox — defaults to logged-in user's name,
+      // but can be edited (e.g., if someone fills the form on behalf of another inspector).
       return wrap(`
-        <div class="field-inspector" style="flex-direction:column;align-items:stretch;gap:6px;">
-          <select class="field-select" name="${f.key}__select" id="${f.key}__select">
-            <option value="">— pick from list —</option>
-            <option value="__me__" selected>Me (${escapeHtml(me.name)})</option>
-            ${(me.inspectors || []).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}
-            <option value="__other__">Other (type below)</option>
-          </select>
-          <input class="field-input" type="text" name="${f.key}__custom" id="${f.key}__custom"
-                 placeholder="Or type a name" style="display:none;">
-        </div>
+        <input class="field-input" type="text" name="${f.key}"
+               value="${escapeHtml(me.name || '')}"
+               placeholder="Inspector name">
       `);
     case 'photo':
       return wrap(`
@@ -288,14 +281,9 @@ async function submitForm() {
     if (f.type === 'radio') {
       const checked = document.querySelector(`input[name="${f.key}"]:checked`);
       fields[f.key] = checked ? checked.value : '';
-    } else if (f.type === 'inspector') {
-      const sel = document.getElementById(`${f.key}__select`).value;
-      if (sel === '__me__') fields[f.key] = me.name;
-      else if (sel === '__other__') fields[f.key] = document.getElementById(`${f.key}__custom`).value.trim();
-      else fields[f.key] = sel;
     } else {
       const el = document.querySelector(`[name="${f.key}"]`);
-      fields[f.key] = el ? el.value : '';
+      fields[f.key] = el ? el.value.trim() : '';
     }
   }
 
@@ -364,10 +352,6 @@ function validate() {
       if (!(photoState.fields[f.key] || []).length) errors.push(f.label);
     } else if (f.type === 'radio') {
       if (!document.querySelector(`input[name="${f.key}"]:checked`)) errors.push(f.label);
-    } else if (f.type === 'inspector') {
-      const sel = document.getElementById(`${f.key}__select`).value;
-      if (!sel) errors.push(f.label);
-      else if (sel === '__other__' && !document.getElementById(`${f.key}__custom`).value.trim()) errors.push(f.label);
     } else {
       const el = document.querySelector(`[name="${f.key}"]`);
       if (!el || !el.value.trim()) errors.push(f.label);
