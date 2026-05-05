@@ -23,6 +23,8 @@ const sharp = require('sharp');
 
 const { FORMS_BY_ID } = require('../lib/forms-config');
 const pendingStore = require('../lib/pending-store');
+// IMPORT THE IST HELPER WE CREATED
+const { toIstString } = require('../lib/datetime'); 
 
 const router = express.Router();
 
@@ -79,7 +81,8 @@ router.post('/:formId', upload.any(), async (req, res, next) => {
       formId: form.id,
       formCode: form.code,
       formTitle: form.title,
-      submittedAt: now.toISOString(),
+      // USE THE IST HELPER HERE INSTEAD OF toISOString()
+      submittedAt: toIstString(now), 
       user: {
         name: req.user.name,
         email: req.user.email,
