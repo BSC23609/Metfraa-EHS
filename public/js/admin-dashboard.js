@@ -131,6 +131,22 @@ function render(data) {
       render(lastData);
     });
   });
+
+  // Wire up date navigation arrows
+  document.querySelectorAll('.chart-nav__btn').forEach(btn => {
+    if (btn.disabled) return;
+    btn.addEventListener('click', () => {
+      const newStart = btn.dataset.start;
+      const newEnd = btn.dataset.end;
+      if (newStart && newEnd) {
+        document.getElementById('filter-start').value = newStart;
+        document.getElementById('filter-end').value = newEnd;
+        // Clear preset highlight since custom navigation is now in effect
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('preset-btn--active'));
+        loadDashboard();
+      }
+    });
+  });
 }
 
 // ----------------------------------------------------------------------------
@@ -170,71 +186,103 @@ function dailyChartHtml(data) {
   if (!days.length) return '';
 
   const maxVal = Math.max(1, ...days.map(d => d.total));
-  // Round max up to a nice number for y-axis
   const ySteps = niceMax(maxVal);
 
-  const chartH = 220;
-  const chartPaddingTop = 12;
-  const chartPaddingBottom = 38;
-  const plotH = chartH - chartPaddingTop - chartPaddingBottom;
+  // Use a single coordinate system — viewBox in pure pixels
+  const VB_W = 1000;
+  const VB_H = 280;
+  const M_TOP = 16;
+  const M_BOTTOM = 60;       // room for rotated date labels
+  const M_LEFT = 44;         // room for y-axis labels
+  const M_RIGHT = 16;
+  const PLOT_W = VB_W - M_LEFT - M_RIGHT;
+  const PLOT_H = VB_H - M_TOP - M_BOTTOM;
 
-  // Determine bar width from number of days (responsive width via SVG viewBox)
-  const barGap = 4;
-  const totalBarsArea = 100; // percentage units in viewBox width minus left axis
-  const leftAxisW = 8; // leave space for y-axis labels (in viewBox %)
-  const barAreaPct = 100 - leftAxisW;
-  const barW = (barAreaPct / days.length) - barGap / 100 * 0;
+  const barSlotW = PLOT_W / days.length;
+  const barW = Math.min(28, Math.max(4, barSlotW * 0.7));
+  const barGap = barSlotW - barW;
 
-  // Generate bar SVG
+  // ----- Y axis (gridlines + value labels) -----
+  const yLines = [];
+  const numYTicks = 4;
+  for (let t = 0; t <= numYTicks; t++) {
+    const val = Math.round((ySteps / numYTicks) * t);
+    const y = M_TOP + PLOT_H - (val / ySteps) * PLOT_H;
+    yLines.push(`<line x1="${M_LEFT}" y1="${y}" x2="${VB_W - M_RIGHT}" y2="${y}" stroke="#E5E5E5" stroke-width="1"/>`);
+    yLines.push(`<text x="${M_LEFT - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="#999">${val}</text>`);
+  }
+
+  // ----- Bars + labels -----
+  // Date labels: only show enough to fit. Compute max labels that fit at ~50px width per label.
+  const maxLabels = Math.floor(PLOT_W / 70);
+  const labelEveryN = Math.max(1, Math.ceil(days.length / maxLabels));
+
   const bars = days.map((d, i) => {
-    const x = leftAxisW + (barAreaPct / days.length) * i + 0.6;
-    const w = (barAreaPct / days.length) - 1.2;
-    const approvedH = (d.approved / ySteps) * plotH;
-    const rejectedH = (d.rejected / ySteps) * plotH;
-    const pendingH = (d.pending / ySteps) * plotH;
+    const slotX = M_LEFT + i * barSlotW;
+    const barX = slotX + barGap / 2;
+    const cx = slotX + barSlotW / 2;
 
-    let yCursor = chartPaddingTop + plotH;
+    const approvedH = (d.approved / ySteps) * PLOT_H;
+    const rejectedH = (d.rejected / ySteps) * PLOT_H;
+    const pendingH = (d.pending / ySteps) * PLOT_H;
+
+    let yCursor = M_TOP + PLOT_H;
     const segments = [];
     if (d.approved > 0) {
       yCursor -= approvedH;
-      segments.push(`<rect x="${x}%" y="${yCursor}" width="${w}%" height="${approvedH}" fill="#1F8B4C"></rect>`);
+      segments.push(`<rect x="${barX.toFixed(2)}" y="${yCursor.toFixed(2)}" width="${barW.toFixed(2)}" height="${approvedH.toFixed(2)}" fill="#1F8B4C"/>`);
     }
     if (d.rejected > 0) {
       yCursor -= rejectedH;
-      segments.push(`<rect x="${x}%" y="${yCursor}" width="${w}%" height="${rejectedH}" fill="#C0392B"></rect>`);
+      segments.push(`<rect x="${barX.toFixed(2)}" y="${yCursor.toFixed(2)}" width="${barW.toFixed(2)}" height="${rejectedH.toFixed(2)}" fill="#C0392B"/>`);
     }
     if (d.pending > 0) {
       yCursor -= pendingH;
-      segments.push(`<rect x="${x}%" y="${yCursor}" width="${w}%" height="${pendingH}" fill="#F2B93B"></rect>`);
+      segments.push(`<rect x="${barX.toFixed(2)}" y="${yCursor.toFixed(2)}" width="${barW.toFixed(2)}" height="${pendingH.toFixed(2)}" fill="#F2B93B"/>`);
     }
 
-    // Total label above bar (only if bar has any value)
+    // Total label above bar
     const totalLabel = d.total > 0
-      ? `<text x="${x + w / 2}%" y="${yCursor - 3}" text-anchor="middle" font-size="9" fill="#5A5A5A" font-weight="600">${d.total}</text>`
+      ? `<text x="${cx.toFixed(2)}" y="${(yCursor - 4).toFixed(2)}" text-anchor="middle" font-size="11" fill="#5A5A5A" font-weight="600">${d.total}</text>`
       : '';
 
-    // Hover tooltip via title element
+    // Hover tooltip
     const tooltip = `<title>${d.date}: ${d.total} total (${d.approved} approved, ${d.rejected} rejected, ${d.pending} pending)</title>`;
 
-    // X-axis label — only every Nth day to avoid overcrowding
-    const labelEveryN = Math.max(1, Math.ceil(days.length / 12));
+    // Date label below — rotated 45° if many days, otherwise straight
     const showLabel = i % labelEveryN === 0 || i === days.length - 1;
-    const xLabel = showLabel
-      ? `<text x="${x + w / 2}%" y="${chartH - 18}" text-anchor="middle" font-size="9" fill="#777">${formatChartDate(d.date)}</text>`
-      : '';
+    let xLabel = '';
+    if (showLabel) {
+      const labelY = M_TOP + PLOT_H + 14;
+      if (labelEveryN > 1 || days.length > 7) {
+        xLabel = `<text x="${cx.toFixed(2)}" y="${labelY}" text-anchor="end" font-size="11" fill="#666" transform="rotate(-45 ${cx.toFixed(2)} ${labelY})">${formatChartDate(d.date)}</text>`;
+      } else {
+        xLabel = `<text x="${cx.toFixed(2)}" y="${labelY}" text-anchor="middle" font-size="11" fill="#666">${formatChartDate(d.date)}</text>`;
+      }
+    }
 
     return `<g>${segments.join('')}${totalLabel}${tooltip}${xLabel}</g>`;
   }).join('');
 
-  // Y-axis lines + labels
-  const yLines = [];
-  const numYTicks = 4;
-  for (let t = 0; t <= numYTicks; t++) {
-    const val = (ySteps / numYTicks) * t;
-    const y = chartPaddingTop + plotH - (val / ySteps) * plotH;
-    yLines.push(`<line x1="${leftAxisW}%" y1="${y}" x2="100%" y2="${y}" stroke="#E5E5E5" stroke-width="1"></line>`);
-    yLines.push(`<text x="${leftAxisW - 1}%" y="${y + 3}" text-anchor="end" font-size="9" fill="#999">${Math.round(val)}</text>`);
-  }
+  // ----- Date navigation arrows -----
+  // Compute previous-window and next-window ranges (same length as current)
+  const winDays = data.range.days;
+  const startD = new Date(`${data.range.startDate}T00:00:00`);
+  const prevStart = new Date(startD);
+  prevStart.setDate(prevStart.getDate() - winDays);
+  const prevEnd = new Date(prevStart);
+  prevEnd.setDate(prevEnd.getDate() + winDays - 1);
+
+  const endD = new Date(`${data.range.endDate}T00:00:00`);
+  const nextStart = new Date(endD);
+  nextStart.setDate(nextStart.getDate() + 1);
+  const nextEnd = new Date(nextStart);
+  nextEnd.setDate(nextEnd.getDate() + winDays - 1);
+
+  // Disable "next" if next window would extend past today
+  const todayStr = formatYmd(new Date());
+  const nextStartStr = formatYmd(nextStart);
+  const nextDisabled = nextStartStr > todayStr;
 
   return `
     <section class="dash-section">
@@ -246,8 +294,28 @@ function dailyChartHtml(data) {
           <span class="legend-item"><span class="legend-dot" style="background:#F2B93B"></span>Pending</span>
         </div>
       </div>
+
+      <!-- Date navigation -->
+      <div class="chart-nav">
+        <button type="button" class="chart-nav__btn" data-shift="prev"
+                data-start="${formatYmd(prevStart)}" data-end="${formatYmd(prevEnd)}"
+                title="Previous ${winDays} day${winDays === 1 ? '' : 's'}">
+          ← ${formatDateLong(formatYmd(prevStart))} – ${formatDateLong(formatYmd(prevEnd))}
+        </button>
+        <div class="chart-nav__current">
+          ${formatDateLong(data.range.startDate)} – ${formatDateLong(data.range.endDate)}
+        </div>
+        <button type="button" class="chart-nav__btn ${nextDisabled ? 'chart-nav__btn--disabled' : ''}"
+                ${nextDisabled ? 'disabled' : ''}
+                data-shift="next"
+                data-start="${formatYmd(nextStart)}" data-end="${formatYmd(nextEnd)}"
+                title="${nextDisabled ? 'No future data available' : `Next ${winDays} day${winDays === 1 ? '' : 's'}`}">
+          ${nextDisabled ? 'No future data' : formatDateLong(formatYmd(nextStart)) + ' – ' + formatDateLong(formatYmd(nextEnd))} →
+        </button>
+      </div>
+
       <div class="chart-wrap">
-        <svg viewBox="0 0 100 ${chartH}" preserveAspectRatio="none" class="chart-svg">
+        <svg viewBox="0 0 ${VB_W} ${VB_H}" preserveAspectRatio="xMidYMid meet" class="chart-svg" xmlns="http://www.w3.org/2000/svg">
           ${yLines.join('')}
           ${bars}
         </svg>
