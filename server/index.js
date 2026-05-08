@@ -10,6 +10,7 @@ const cookieSession = require('cookie-session');
 const authRoutes = require('./routes/auth');
 const formRoutes = require('./routes/forms');
 const adminRoutes = require('./routes/admin');
+const adminDashboardRoutes = require('./routes/admin-dashboard');
 const debugRoutes = require('./routes/debug');
 const submissionRoutes = require('./routes/submissions');
 const approvalRoutes = require('./routes/approvals');
@@ -117,7 +118,10 @@ app.use('/api', submissionRoutes);
 // --- Approvals API (approver/admin only)
 app.use('/api/approvals', approvalRoutes);
 
-// --- Admin routes
+// --- Admin Dashboard API (admin only)
+app.use('/api/admin', adminDashboardRoutes);
+
+// --- Admin routes (legacy info page kept for now)
 app.use('/admin', adminRoutes);
 
 // --- Dashboard (the main app shell)
@@ -128,6 +132,11 @@ app.get('/', (req, res) => {
 // --- Submissions page
 app.get('/submissions', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'submissions.html'));
+});
+
+// --- Admin Dashboard page (admin-only stats and analytics)
+app.get('/admin-dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'admin-dashboard.html'));
 });
 
 // --- Approvals list page

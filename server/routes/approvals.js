@@ -217,10 +217,14 @@ router.post('/:formId/:subId/approve', express.json({ limit: '10mb' }), async (r
     // Delete the pending submission (JSON + any leftover photos folder)
     await pendingStore.deletePending(formId, subId);
 
-    // Bust the submissions cache so the new approved row shows up immediately
+    // Bust the submissions + admin-dashboard caches so new data shows up
     try {
       const submissionsRouter = require('./submissions');
       if (submissionsRouter.clearCache) submissionsRouter.clearCache();
+    } catch {}
+    try {
+      const adminDashRouter = require('./admin-dashboard');
+      if (adminDashRouter.clearCache) adminDashRouter.clearCache();
     } catch {}
 
     res.json({
@@ -291,6 +295,10 @@ router.post('/:formId/:subId/reject', express.json(), async (req, res) => {
     try {
       const submissionsRouter = require('./submissions');
       if (submissionsRouter.clearCache) submissionsRouter.clearCache();
+    } catch {}
+    try {
+      const adminDashRouter = require('./admin-dashboard');
+      if (adminDashRouter.clearCache) adminDashRouter.clearCache();
     } catch {}
 
     res.json({
